@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inside the Cloud Chip</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Source+Sans+3:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap">
+<style>
+/* Layout: a circuit-board figure; copper traces run from a central CPU to four pads you tap to open each advance. */
+:root{
+  --bg:#F3F5F7; --surface:#FFFFFF; --ink:#16202A; --muted:#55636F; --line:#D5DCE2;
+  --board:#E6ECEF; --copper:#B0602A; --copper-soft:#F3E3D6; --done:#2F7D5B;
+  --f-display:"Sora",system-ui,sans-serif; --f-body:"Source Sans 3",system-ui,sans-serif; --f-mono:"JetBrains Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0E1419; --surface:#151E25; --ink:#E8EDF1; --muted:#9AA8B3; --line:#26323C;
+  --board:#121A20; --copper:#E39A62; --copper-soft:#3A2A1F; --done:#5FC195; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0E1419; --surface:#151E25; --ink:#E8EDF1; --muted:#9AA8B3; --line:#26323C;
+  --board:#121A20; --copper:#E39A62; --copper-soft:#3A2A1F; --done:#5FC195; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:17px;line-height:1.6;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:40px 56px}
+.wrap{max-width:1040px;margin:0 auto;display:flex;flex-direction:column;gap:28px}
+.eyebrow{font-family:var(--f-mono);font-size:12.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--copper);margin:0}
+h1{font-family:var(--f-display);font-weight:700;font-size:clamp(30px,5vw,46px);line-height:1.1;margin:8px 0 0;text-wrap:balance}
+.lede{max-width:65ch;color:var(--muted);margin:14px 0 0}
+.parts{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 0;padding:0;list-style:none}
+.parts li{font-family:var(--f-mono);font-size:12.5px;padding:4px 10px;border:1px solid var(--line);border-radius:4px;color:var(--muted);background:var(--surface)}
+
+.stage{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:24px;align-items:start}
+@media (max-width:820px){.stage{grid-template-columns:1fr}}
+
+.board{background:var(--board);border:1px solid var(--line);border-radius:10px;padding:12px;position:relative}
+.board svg{display:block;width:100%;height:auto;max-width:100%}
+.trace{fill:none;stroke:var(--line);stroke-width:3;stroke-linecap:round;stroke-linejoin:round;transition:stroke .25s}
+.trace.on{stroke:var(--copper)}
+.trace.seen{stroke:var(--copper);opacity:.45}
+.chip-body{fill:var(--surface);stroke:var(--ink);stroke-width:2.5}
+.chip-core{fill:var(--copper-soft);stroke:var(--copper);stroke-width:1.5}
+.pin{fill:var(--muted)}
+.chip-label{font-family:var(--f-mono);font-size:15px;font-weight:600;fill:var(--ink);letter-spacing:.08em}
+.pad-label{font-family:var(--f-body);font-size:16px;font-weight:600;fill:var(--ink)}
+
+.pad{cursor:pointer;outline:none}
+.pad .ring{fill:var(--surface);stroke:var(--copper);stroke-width:2.5;transition:fill .2s}
+.pad .plus{stroke:var(--copper);stroke-width:2.5;stroke-linecap:round}
+.pad .check{fill:none;stroke:var(--surface);stroke-width:2.8;stroke-linecap:round;stroke-linejoin:round;opacity:0}
+.pad:hover .ring,.pad:focus-visible .ring{fill:var(--copper-soft)}
+.pad:focus-visible .ring{stroke-width:4}
+.pad.active .ring{fill:var(--copper)}
+.pad.active .plus{stroke:var(--surface)}
+.pad.seen:not(.active) .ring{fill:var(--done);stroke:var(--done)}
+.pad.seen:not(.active) .plus{opacity:0}
+.pad.seen:not(.active) .check{opacity:1}
+@media (prefers-reduced-motion:no-preference){
+  .pad:not(.seen):not(.active) .ring{animation:pulse 2.4s ease-in-out infinite}
+  @keyframes pulse{50%{stroke-width:5}}
+}
+
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:24px;min-width:0;display:flex;flex-direction:column;gap:14px}
+.panel-top{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.step{font-family:var(--f-mono);font-size:12.5px;color:var(--muted);letter-spacing:.06em}
+.nav{display:flex;gap:6px}
+.nav button{width:36px;height:36px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:18px;cursor:pointer;display:grid;place-items:center}
+.nav button:hover{border-color:var(--copper);color:var(--copper)}
+.nav button:focus-visible{outline:2px solid var(--copper);outline-offset:2px}
+.panel h2{font-family:var(--f-display);font-weight:600;font-size:24px;line-height:1.25;margin:0;text-wrap:balance}
+.panel p{margin:0;max-width:60ch}
+.why{font-size:15.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:12px}
+.why b{color:var(--ink);font-weight:600}
+
+.watts{display:flex;flex-direction:column;gap:8px;margin-top:2px}
+.wrow{display:grid;grid-template-columns:120px 1fr 56px;gap:10px;align-items:center;font-size:14.5px}
+.wbar{height:12px;border-radius:3px;background:var(--line);overflow:hidden}
+.wbar span{display:block;height:100%;background:var(--copper)}
+.wval{font-family:var(--f-mono);font-size:13.5px;text-align:right;font-variant-numeric:tabular-nums}
+
+.progress{display:flex;align-items:center;gap:12px;font-size:15px;color:var(--muted)}
+.dots{display:flex;gap:6px}
+.dots i{width:10px;height:10px;border-radius:50%;background:var(--line)}
+.dots i.seen{background:var(--done)}
+.done-note{color:var(--done);font-weight:600}
+.source{font-size:13.5px;color:var(--muted);margin:0}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">Advances in cloud technology · Computer technology</p>
+    <h1>What engineers are improving inside every cloud server</h1>
+    <p class="lede">Computer technology is the backbone of cloud computing. Every server has the same core parts, and advances in each one make the cloud more efficient, faster and more scalable. Tap each copper pad on the board to see one improvement.</p>
+    <ul class="parts" aria-label="Basic computer parts">
+      <li>CPU</li><li>RAM</li><li>Network interface</li><li>HDD / SSD storage</li><li>Power supply</li><li>Cooling</li><li>Ports</li>
+    </ul>
+  </header>
+
+  <section class="stage">
+    <div class="board">
+      <svg viewBox="0 0 560 440" role="group" aria-label="Diagram of a CPU with four improvement areas">
+        <!-- traces -->
+        <path class="trace" data-t="0" d="M210 170 H150 V95 H70"/>
+        <path class="trace" data-t="1" d="M350 170 H410 V95 H490"/>
+        <path class="trace" data-t="2" d="M210 270 H150 V345 H70"/>
+        <path class="trace" data-t="3" d="M350 270 H410 V345 H490"/>
+        <!-- pins -->
+        <g id="pins"></g>
+        <!-- chip -->
+        <rect class="chip-body" x="200" y="140" width="160" height="160" rx="10"/>
+        <rect class="chip-core" x="232" y="172" width="96" height="96" rx="6"/>
+        <text class="chip-label" x="280" y="226" text-anchor="middle">CPU</text>
+        <!-- labels -->
+        <text class="pad-label" x="40" y="62">Improving efficiency</text>
+        <text class="pad-label" x="520" y="62" text-anchor="end">Smaller components</text>
+        <text class="pad-label" x="40" y="392">Solid-state components</text>
+        <text class="pad-label" x="520" y="392" text-anchor="end">More processing power</text>
+        <!-- pads -->
+        <g id="pads"></g>
+      </svg>
+    </div>
+
+    <article class="panel" aria-live="polite">
+      <div class="panel-top">
+        <span class="step" id="step">1 / 4</span>
+        <div class="nav">
+          <button id="prev" type="button" aria-label="Previous improvement">‹</button>
+          <button id="next" type="button" aria-label="Next improvement">›</button>
+        </div>
+      </div>
+      <h2 id="ptitle"></h2>
+      <p id="pbody"></p>
+      <div id="pextra"></div>
+      <p class="why" id="pwhy"></p>
+      <div class="progress">
+        <div class="dots" id="dots"></div>
+        <span id="ptext"></span>
+      </div>
+    </article>
+  </section>
+
+  <p class="source">Summarized from IBM SkillsBuild, Introduction to Cloud Computing, Module 4.</p>
+</div>
+
+<script>
+const items=[
+  {t:"Improving efficiency",
+   b:"CPUs keep gaining computing power while needing less electricity. ARM processors, for example, use about 5 watts, compared with roughly 130 watts for higher-end alternatives.",
+   w:"Data centers can add more processing power while using less energy and producing less heat.",
+   watts:true},
+  {t:"Reducing component size",
+   b:"Computer chips keep getting smaller. Smaller chips mean more processing power fits in the same physical space.",
+   w:"Cloud data centers can keep adding processing power inside the same warehouse space."},
+  {t:"Using more solid-state components",
+   b:"Traditional hard disks have spinning platters and a moving needle, and moving parts wear out. Solid-state drives have no moving parts and use less power.",
+   w:"Moving to SSDs lowers the chance that disks fail and cuts the power the devices consume."},
+  {t:"Increasing processing power",
+   b:"Graphics processing units (GPUs) handle graphics and are many times faster than CPUs. Cloud engineers now use GPUs for the heaviest calculations, such as complex data processing, natural language processing and image manipulation.",
+   w:"GPUs shorten the time these intensive jobs take and improve performance for those types of work."}
+];
+const pos=[[70,95],[490,95],[70,345],[490,345]];
+const NS="http://www.w3.org/2000/svg";
+const padsG=document.getElementById("pads"), pinsG=document.getElementById("pins");
+// chip pins
+for(let i=0;i<6;i++){const o=152+i*27;
+  [[o,128,8,14],[o,298,8,14],[188,o,14,8],[358,o,14,8]].forEach(([x,y,w,h])=>{
+    const r=document.createElementNS(NS,"rect");r.setAttribute("class","pin");r.setAttribute("x",x);r.setAttribute("y",y);r.setAttribute("width",w);r.setAttribute("height",h);r.setAttribute("rx",1.5);pinsG.appendChild(r);});}
+const pads=pos.map(([x,y],i)=>{
+  const g=document.createElementNS(NS,"g");g.setAttribute("class","pad");g.setAttribute("tabindex","0");g.setAttribute("role","button");
+  g.setAttribute("aria-label","Open: "+items[i].t);
+  g.innerHTML=`<circle class="ring" cx="${x}" cy="${y}" r="17"/><path class="plus" d="M${x-7} ${y}H${x+7}M${x} ${y-7}V${y+7}"/><path class="check" d="M${x-7} ${y}l5 5 9-10"/>`;
+  g.addEventListener("click",()=>show(i));
+  g.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();show(i)}});
+  padsG.appendChild(g);return g;});
+const traces=[...document.querySelectorAll(".trace")];
+const dots=document.getElementById("dots");
+items.forEach(()=>dots.appendChild(document.createElement("i")));
+const seen=new Set(); let cur=0;
+function show(i){
+  cur=(i+items.length)%items.length; seen.add(cur); const it=items[cur];
+  document.getElementById("step").textContent=`${cur+1} / ${items.length}`;
+  document.getElementById("ptitle").textContent=it.t;
+  document.getElementById("pbody").textContent=it.b;
+  document.getElementById("pwhy").innerHTML="<b>Why it matters for the cloud:</b> "+it.w;
+  document.getElementById("pextra").innerHTML=it.watts?
+    `<div class="watts" aria-label="Power use comparison">
+      <div class="wrow"><span>ARM processor</span><div class="wbar"><span style="width:${5/130*100}%"></span></div><span class="wval">~5 W</span></div>
+      <div class="wrow"><span>High-end CPU</span><div class="wbar"><span style="width:100%"></span></div><span class="wval">~130 W</span></div>
+    </div>`:"";
+  pads.forEach((p,k)=>{p.classList.toggle("active",k===cur);p.classList.toggle("seen",seen.has(k))});
+  traces.forEach((t,k)=>{t.classList.toggle("on",k===cur);t.classList.toggle("seen",k!==cur&&seen.has(k))});
+  [...dots.children].forEach((d,k)=>d.classList.toggle("seen",seen.has(k)));
+  const pt=document.getElementById("ptext");
+  if(seen.size===items.length){pt.innerHTML='<span class="done-note">All 4 explored</span>'}
+  else pt.textContent=`${seen.size} of ${items.length} explored`;
+}
+document.getElementById("prev").onclick=()=>show(cur-1);
+document.getElementById("next").onclick=()=>show(cur+1);
+show(0);
+</script>
+</body>
+</html>
